@@ -87,59 +87,45 @@ static esp_err_t http_event_handle(esp_http_client_event_t *evt) {
     return ESP_OK;
 }
 
-static char* ai_create_prompt(void) {
-
-    /*
-    // GEMINI JSON REQUEST FORMAT
-    {
-        "contents": {
-            "role": "ROLE",
-            "parts": {
-                "text": "TEXT"
-            }
-        },
-        "generation_config": {
-            "responseMimeType": "RESPONSE_MIME_TYPE",
-            "responseSchema": RESPONSE_SCHEMA,
-        }
-    }
-    */
-
+static char *ai_create_prompt(const char *prompt)
+{
     cJSON *root = cJSON_CreateObject();
+    if (!root) return NULL;
 
     cJSON *contents = cJSON_AddArrayToObject(root, "contents");
     cJSON *content  = cJSON_CreateObject();
     cJSON_AddItemToArray(contents, content);
-
     cJSON *parts = cJSON_AddArrayToObject(content, "parts");
     cJSON *part  = cJSON_CreateObject();
     cJSON_AddItemToArray(parts, part);
-    cJSON_AddStringToObject(part, "text", "Hello from ESP");
+    cJSON_AddStringToObject(part, "text", prompt);
 
     cJSON *gen = cJSON_AddObjectToObject(root, "generationConfig");
-    cJSON_AddStringToObject(gen, "responseMimeType", "application/json");
+    cJSON_AddNumberToObject(gen, "maxOutputTokens", 100);
+    cJSON *think = cJSON_AddObjectToObject(gen, "thinkingConfig");
+    cJSON_AddStringToObject(think, "thinkingLevel", "minimal");
 
-    char *str = cJSON_PrintUnformatted(root);
-    cJSON_Delete(root);
-    return str;   
+    char *json = cJSON_PrintUnformatted(root);  
+    cJSON_Delete(root);                         
+    return json;
 }
 
-static void ai_get_response(const char* json, char* buffer, size_t buffer_size) {
+static void ai_get_response(const char* json, char* out, size_t out_size) {
     cJSON *root = cJSON_Parse(json);
-    if (root == NULL) {
+    if (!root) {
         ESP_LOGE(TAG, "JSON parse failed");
         return;
     }
 
     cJSON *candidates = cJSON_GetObjectItem(root, "candidates");
-    cJSON *cand0      = cJSON_GetArrayItem(candidates, 0);
-    cJSON *content    = cJSON_GetObjectItem(cand0, "content");
-    cJSON *parts      = cJSON_GetObjectItem(content, "parts");
-    cJSON *part0      = cJSON_GetArrayItem(parts, 0);
-    cJSON *text       = cJSON_GetObjectItem(part0, "text");
+    cJSON *cand0   = cJSON_GetArrayItem(candidates, 0);
+    cJSON *content = cJSON_GetObjectItem(cand0, "content");
+    cJSON *parts   = cJSON_GetObjectItem(content, "parts");
+    cJSON *part0   = cJSON_GetArrayItem(parts, 0);
+    cJSON *text    = cJSON_GetObjectItem(part0, "text");
 
-    if (cJSON_IsString(text) && text->valuestring != NULL) {
-        snprintf(buffer, buffer_size, "%s", text->valuestring);
+    if (cJSON_IsString(text)) {
+        snprintf(out, out_size, "%s", text->valuestring); 
     } else {
         ESP_LOGE(TAG, "No text in response");
     }
@@ -147,9 +133,31 @@ static void ai_get_response(const char* json, char* buffer, size_t buffer_size) 
     cJSON_Delete(root);
 }
 
-void ai_init(const char* prompt, char* out_buffer, size_t out_buffer_size) {
+void ai_ask(const char* prompt, char* out, size_t out_size) {
+    char* json_prompt = ai_create_prompt(prompt);
+    memset(response_buffer, 0, sizeof(response_buffer));
+    
+    esp_http_client_set_post_field(client, json_prompt, strlen(json_prompt));
+    esp_err_t err = esp_http_client_perform(client);
 
+    cJSON_free(json_prompt);
 
+    if (err ==  ESP_OK) {
+       int status = esp_http_client_get_status_code(client);
+       ESP_LOGI(TAG, "HTTP status: %d", status);
+
+       if (status == 200) {
+           ai_get_response(response_buffer, out, out_size);
+       }else {
+           ESP_LOGE(TAG, "ERROR: %s", response_buffer);
+        }
+    }else {
+        ESP_LOGE(TAG, "perform failed: %s", esp_err_to_name(err));
+        return;
+    }
+}
+
+void ai_init(void) {
     esp_http_client_config_t config = {
         .host = "generativelanguage.googleapis.com",
         .path = "/v1beta/models/" GEMINI_MODEL ":generateContent",
@@ -166,25 +174,11 @@ void ai_init(const char* prompt, char* out_buffer, size_t out_buffer_size) {
     
     esp_http_client_set_method(client, HTTP_METHOD_POST);
     esp_http_client_set_header(client, "Content-Type", "application/json");
-
-    char* post_data = ai_create_prompt();
-    esp_http_client_set_post_field(client, post_data, strlen(post_data));
-    esp_err_t err = esp_http_client_perform(client);
-    cJSON_free(post_data);
-
-    if (err == ESP_OK) {
-        ESP_LOGI(TAG, "HTTP POST Status = %d, content_length = %"PRId64,
-                esp_http_client_get_status_code(client),
-                esp_http_client_get_content_length(client));
-        if (esp_http_client_get_status_code(client) == 200) {
-            ai_get_response(response_buffer, out_buffer, out_buffer_size);        
-        }
-        else {
-            ESP_LOGE(TAG, "ERROR: %s", response_buffer);
-        }
-    } else {
-        ESP_LOGE(TAG, "HTTP POST request failed: %s", esp_err_to_name(err));
-    }
-    esp_http_client_cleanup(client);
 }
 
+void ai_deinit(void) {
+    if (client) {
+        esp_http_client_cleanup(client);
+        client = NULL;
+    }
+}

@@ -34,7 +34,9 @@ void app_main(void)
     
     if (is_wifi_connected()) {
         static char recv_buffer[512] = {0};
-        ai_init(prompt, recv_buffer, sizeof(recv_buffer));
+        ai_init();
+
+        ai_ask("What is the weather in New York today", recv_buffer, sizeof(recv_buffer));
         ESP_LOGI(TAG, "GEMINI: %s", recv_buffer);
     }else {
         ESP_LOGE(TAG, "Failed to connect to internet");
