@@ -4,6 +4,7 @@ dependencies.lock
 
 /.cache/
 
+main/build/
 sdkconfig
 sdkconfig.old
 main/secret.h
