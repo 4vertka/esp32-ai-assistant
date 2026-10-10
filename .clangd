@@ -1,9 +1,0 @@
-CompileFlags:
-  CompilationDatabase: build
-  Remove: [-m*, -f*]
-Diagnostics:
-  UnusedIncludes: None
-  MissingIncludes: None
-  Suppress:
-    - implicit-function-declaration
-    - pp_including_mainfile_in_preamble
