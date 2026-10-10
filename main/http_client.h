@@ -1,6 +1,7 @@
 #ifndef HTTP_CLIENT_H
 #define HTTP_CLIENT_H 
 
-void ai_init(void);
+#include <stddef.h>
 
+void ai_init(const char* prompt, char* out_buffer, size_t out_buffer_size);
 #endif

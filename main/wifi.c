@@ -20,11 +20,13 @@
 #include "lwip/err.h"
 #include "lwip/sys.h"
 
+#include "http_client.h"
+
 static const char *WIFI_TAG = "WIFI";
 static EventGroupHandle_t wifi_event_group;
 
-#define WIFI_CONNECTED_BIT BIT0
-#define WIFI_FAIL_BIT BIT1
+#define WIFI_CONNECTED_BIT          BIT0
+#define WIFI_FAIL_BIT               BIT1
 
 static int max_connect_retry = 5;
 
@@ -48,6 +50,13 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     max_connect_retry = 0;
     xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
   }
+}
+
+uint8_t is_wifi_connected(void) {
+    if (xEventGroupGetBits(wifi_event_group) & WIFI_CONNECTED_BIT) {
+        return 1;
+    }
+    return 0;
 }
 
 void wifi_init(void) {
@@ -79,6 +88,7 @@ void wifi_init(void) {
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
 
   ESP_ERROR_CHECK(esp_wifi_start());
+  esp_wifi_set_ps(WIFI_PS_NONE);
 
   ESP_LOGI(WIFI_TAG, "WIFI INIT FINISHED");
 

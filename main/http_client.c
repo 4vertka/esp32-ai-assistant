@@ -1,6 +1,10 @@
 #include "http_client.h"
 
+#include <sys/param.h>
+#include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
+
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "esp_event.h"
@@ -15,7 +19,7 @@
 
 #include "esp_http_client.h"
 
-#include <cjson/cJSON.h>
+#include "cJSON.h"
 
 #include "secret.h"
 
@@ -25,104 +29,65 @@
 #define GEMINI_MODEL "gemini-3.5-flash-lite"
 
 static const char* TAG = "HTTP_CLIENT";
-static const char response_buffer[MAX_HTTP_OUTPUT_BUFFER + 1] = {0};
+static char response_buffer[MAX_HTTP_OUTPUT_BUFFER + 1] = {0};
+static esp_http_client_handle_t client;
 
 static esp_err_t http_event_handle(esp_http_client_event_t *evt) {
-    static char* output_buffer;
-    static int output_len;
+    static int output_len = 0;
 
-    switch(evt->event_id)
-    {
-        case HTTP_EVENT_ERROR: {
-            ESP_LOGI(TAG, "HTTP_EVENT_ERROR");
-            break;
-        }
-        case HTTP_EVENT_ON_CONNECTED: {
+    switch (evt->event_id) {
+        case HTTP_EVENT_ON_CONNECTED:
             ESP_LOGI(TAG, "HTTP_EVENT_ON_CONNECTED");
+            output_len = 0;                     
+            if (evt->user_data) {
+                ((char *)evt->user_data)[0] = '\0';
+            }
             break;
-        }
-        case HTTP_EVENT_HEADER_SENT: {
-            ESP_LOGI(TAG, "HTTP_EVENT_HEADER_SENT");
+
+        case HTTP_EVENT_ON_HEADER:
+            ESP_LOGI(TAG, "HEADER %s: %s", evt->header_key, evt->header_value);
             break;
-        }
-        case HTTP_EVENT_ON_HEADER: {
-            ESP_LOGI(TAG, "HTTP_EVENT_ON_HEADER, key=%s, value=%s", evt->header_key, evt->header_value);
-            break;
-        }
-        case HTTP_EVENT_ON_HEADERS_COMPLETE: {
-            ESP_LOGI(TAG, "HTTP_EVENT_ON_HEADERS_COMPLETE");
-            break;
-        }
+
         case HTTP_EVENT_ON_DATA: {
             ESP_LOGI(TAG, "HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
-            if (output_len == 0 && evt->user_data) {
-                memset(evt->user_data, 0, MAX_HTTP_OUTPUT_BUFFER);
+            char *buf = (char *)evt->user_data;
+            if (buf && output_len + evt->data_len < MAX_HTTP_OUTPUT_BUFFER - 1) {
+                memcpy(buf + output_len, evt->data, evt->data_len);
+                output_len += evt->data_len;
+                buf[output_len] = '\0';
+            } else {
+                ESP_LOGW(TAG, "Response buffer full, data dropped");
             }
-            if (!esp_http_client_is_chunked_response(evt->client)) {
-                int copy_len = 0;
-                if (evt->user_data) {
-                    copy_len = MIN(evt->data_len, (MAX_HTTP_OUTPUT_BUFFER - output_len));
-                    if (copy_len) {
-                        memcpy(evt->user_data + output_len, evt->data, copy_len);
-                    }
-                } else {
-                    int content_len = esp_http_client_get_content_length(evt->client);
-                    if (output_buffer == NULL) {
-                        output_buffer = (char *) calloc(content_len + 1, sizeof(char));
-                        output_len = 0;
-                        if (output_buffer == NULL) {
-                            ESP_LOGE(TAG, "Failed to allocate memory for output buffer");
-                            return ESP_FAIL;
-                        }
-                    }
-                    copy_len = MIN(evt->data_len, (content_len - output_len));
-                    if (copy_len) {
-                        memcpy(output_buffer + output_len, evt->data, copy_len);
-                    }
-                }
-                output_len += copy_len;
-            }
+            break;
+        }
 
-            break;
-        }
-        case HTTP_EVENT_ON_FINISH: {
+        case HTTP_EVENT_ON_FINISH:
             ESP_LOGI(TAG, "HTTP_EVENT_ON_FINISH");
-            if (output_buffer != NULL) {
-                free(output_buffer);
-                output_buffer = NULL;
-            }
-            output_len = 0;
-            break;
-        }
+            break;                                
+
         case HTTP_EVENT_DISCONNECTED: {
             ESP_LOGI(TAG, "HTTP_EVENT_DISCONNECTED");
             int mbedtls_err = 0;
-            esp_err_t err = esp_tls_get_and_clear_last_error((esp_tls_error_handle_t)evt->data, &mbedtls_err, NULL);
+            esp_err_t err = esp_tls_get_and_clear_last_error(
+                (esp_tls_error_handle_t)evt->data, &mbedtls_err, NULL);
             if (err != 0) {
                 ESP_LOGI(TAG, "Last esp error code: 0x%x", err);
                 ESP_LOGI(TAG, "Last mbedtls failure: 0x%x", mbedtls_err);
             }
-            if (output_buffer != NULL) {
-                free(output_buffer);
-                output_buffer = NULL;
-            }
-            output_len = 0;
             break;
         }
-        case HTTP_EVENT_REDIRECT: {
-            ESP_LOGI(TAG, "HTTP_EVENT_REDIRECT");
-            esp_http_client_set_header(evt->client, "From", "user@example.com");
-            esp_http_client_set_header(evt->client, "Accept", "text/html");
+
+        case HTTP_EVENT_REDIRECT:
             esp_http_client_set_redirection(evt->client);
             break;
-        }
-        default: break;
-    }
 
+        default:
+            break;
+    }
     return ESP_OK;
 }
 
-char* create_prompt() {
+static char* ai_create_prompt(void) {
 
     /*
     // GEMINI JSON REQUEST FORMAT
@@ -140,48 +105,55 @@ char* create_prompt() {
     }
     */
 
-    char* str = NULL;
+    cJSON *root = cJSON_CreateObject();
 
-    cJSON *monitor = cJSON_CreateObject();
+    cJSON *contents = cJSON_AddArrayToObject(root, "contents");
+    cJSON *content  = cJSON_CreateObject();
+    cJSON_AddItemToArray(contents, content);
 
-    cJSON *contents = NULL;
-    cJSON *parts = NULL;
-    cJSON *text = NULL;
-    cJSON *generation_config = NULL;
-    cJSON *responseMimeType = NULL;
+    cJSON *parts = cJSON_AddArrayToObject(content, "parts");
+    cJSON *part  = cJSON_CreateObject();
+    cJSON_AddItemToArray(parts, part);
+    cJSON_AddStringToObject(part, "text", "Hello from ESP");
 
-    //contents
-    cJSON_AddItemToObject(monitor, "contents", contents);
+    cJSON *gen = cJSON_AddObjectToObject(root, "generationConfig");
+    cJSON_AddStringToObject(gen, "responseMimeType", "application/json");
 
-        //parts
-        cJSON_AddItemToObject(contents, "parts", parts);
-        
-            //text
-            text = cJSON_CreateString("Hello from ESP");
-            cJSON_AddItemToObject(parts, "text", text);
-    
-    //generation_config
-    cJSON_AddItemToOject(monitor, "generation_config", generation_config);
-
-        //responseMimeType
-        responseMimeType = cJSON_CreateString("application/json");
-        cJSON_AddItemToObject(generation_config, "responseMimeType", responseMimeType);
-
-    str = cJSON_Print(monitor);
-
-    cJSON_Delete(monitor);
-
-    return str;
+    char *str = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    return str;   
 }
 
-void ai_init(void) {
+static void ai_get_response(const char* json, char* buffer, size_t buffer_size) {
+    cJSON *root = cJSON_Parse(json);
+    if (root == NULL) {
+        ESP_LOGE(TAG, "JSON parse failed");
+        return;
+    }
 
-    char* post_data = create_prompt();
+    cJSON *candidates = cJSON_GetObjectItem(root, "candidates");
+    cJSON *cand0      = cJSON_GetArrayItem(candidates, 0);
+    cJSON *content    = cJSON_GetObjectItem(cand0, "content");
+    cJSON *parts      = cJSON_GetObjectItem(content, "parts");
+    cJSON *part0      = cJSON_GetArrayItem(parts, 0);
+    cJSON *text       = cJSON_GetObjectItem(part0, "text");
+
+    if (cJSON_IsString(text) && text->valuestring != NULL) {
+        snprintf(buffer, buffer_size, "%s", text->valuestring);
+    } else {
+        ESP_LOGE(TAG, "No text in response");
+    }
+
+    cJSON_Delete(root);
+}
+
+void ai_init(const char* prompt, char* out_buffer, size_t out_buffer_size) {
+
 
     esp_http_client_config_t config = {
-        .url = "generativelanguage.googleapis.com",
+        .host = "generativelanguage.googleapis.com",
         .path = "/v1beta/models/" GEMINI_MODEL ":generateContent",
-        .query = GEMINI_API_KEY, 
+        .query = "key=" GEMINI_API_KEY, 
         .event_handler = http_event_handle,
         .user_data = response_buffer,
         .transport_type = HTTP_TRANSPORT_OVER_SSL,
@@ -190,23 +162,29 @@ void ai_init(void) {
     };
 
     ESP_LOGI(TAG, "HTTPS request with url =>");
-    esp_http_client_handle_t client = esp_http_client_init(&config);
+    client = esp_http_client_init(&config);
     
     esp_http_client_set_method(client, HTTP_METHOD_POST);
     esp_http_client_set_header(client, "Content-Type", "application/json");
 
+    char* post_data = ai_create_prompt();
     esp_http_client_set_post_field(client, post_data, strlen(post_data));
-
     esp_err_t err = esp_http_client_perform(client);
+    cJSON_free(post_data);
 
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "HTTP POST Status = %d, content_length = %"PRId64,
                 esp_http_client_get_status_code(client),
                 esp_http_client_get_content_length(client));
+        if (esp_http_client_get_status_code(client) == 200) {
+            ai_get_response(response_buffer, out_buffer, out_buffer_size);        
+        }
+        else {
+            ESP_LOGE(TAG, "ERROR: %s", response_buffer);
+        }
     } else {
         ESP_LOGE(TAG, "HTTP POST request failed: %s", esp_err_to_name(err));
     }
-
     esp_http_client_cleanup(client);
 }
 
