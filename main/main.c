@@ -2,24 +2,28 @@
 #include "hal/gpio_types.h"
 #include <stdio.h>
 
+#include "nvs_flash.h"
+#include "esp_log.h" 
+#include "esp_wifi.h"
+
 #include <driver/gpio.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-static const gpio_num_t led = GPIO_NUM_2;
+#include "wifi.h"
+
+static const char* TAG = "MAIN";
 
 void app_main(void)
 {
-
-    gpio_reset_pin(led);
-    gpio_set_direction(led, GPIO_MODE_OUTPUT);
-
-    while (1) {
-        gpio_set_level(led, 1);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        
-        gpio_set_level(led, 0);
-        vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+      ESP_ERROR_CHECK(nvs_flash_erase());
+      ret = nvs_flash_init();
     }
 
+    ESP_ERROR_CHECK(ret);
+
+    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
+    wifi_init();
 }
