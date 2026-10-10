@@ -15,9 +15,11 @@
 
 #include "esp_http_client.h"
 
+#include <cjson/cJSON.h>
+
 #include "secret.h"
 
-#define MAX_HTTP_RECEIVE_BUFFER         512
+#define MAX_HTTP_RECEIVE_BUFFER           512
 #define MAX_HTTP_OUTPUT_BUFFER            8192
 
 #define GEMINI_MODEL "gemini-3.5-flash-lite"
@@ -120,8 +122,62 @@ static esp_err_t http_event_handle(esp_http_client_event_t *evt) {
     return ESP_OK;
 }
 
+char* create_prompt() {
+
+    /*
+    // GEMINI JSON REQUEST FORMAT
+    {
+        "contents": {
+            "role": "ROLE",
+            "parts": {
+                "text": "TEXT"
+            }
+        },
+        "generation_config": {
+            "responseMimeType": "RESPONSE_MIME_TYPE",
+            "responseSchema": RESPONSE_SCHEMA,
+        }
+    }
+    */
+
+    char* str = NULL;
+
+    cJSON *monitor = cJSON_CreateObject();
+
+    cJSON *contents = NULL;
+    cJSON *parts = NULL;
+    cJSON *text = NULL;
+    cJSON *generation_config = NULL;
+    cJSON *responseMimeType = NULL;
+
+    //contents
+    cJSON_AddItemToObject(monitor, "contents", contents);
+
+        //parts
+        cJSON_AddItemToObject(contents, "parts", parts);
+        
+            //text
+            text = cJSON_CreateString("Hello from ESP");
+            cJSON_AddItemToObject(parts, "text", text);
+    
+    //generation_config
+    cJSON_AddItemToOject(monitor, "generation_config", generation_config);
+
+        //responseMimeType
+        responseMimeType = cJSON_CreateString("application/json");
+        cJSON_AddItemToObject(generation_config, "responseMimeType", responseMimeType);
+
+    str = cJSON_Print(monitor);
+
+    cJSON_Delete(monitor);
+
+    return str;
+}
+
 void ai_init(void) {
-   
+
+    char* post_data = create_prompt();
+
     esp_http_client_config_t config = {
         .url = "generativelanguage.googleapis.com",
         .path = "/v1beta/models/" GEMINI_MODEL ":generateContent",
@@ -139,6 +195,18 @@ void ai_init(void) {
     esp_http_client_set_method(client, HTTP_METHOD_POST);
     esp_http_client_set_header(client, "Content-Type", "application/json");
 
-    //esp_http_client_cleanup(client);
+    esp_http_client_set_post_field(client, post_data, strlen(post_data));
+
+    esp_err_t err = esp_http_client_perform(client);
+
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "HTTP POST Status = %d, content_length = %"PRId64,
+                esp_http_client_get_status_code(client),
+                esp_http_client_get_content_length(client));
+    } else {
+        ESP_LOGE(TAG, "HTTP POST request failed: %s", esp_err_to_name(err));
+    }
+
+    esp_http_client_cleanup(client);
 }
 
