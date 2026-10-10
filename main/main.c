@@ -13,9 +13,30 @@
 #include "wifi.h"
 #include "http_client.h"
 
+#include "display.h"
+
 static const char* TAG = "MAIN";
 
 static const char* prompt = "Hello from esp32";
+
+static void ai_task(void *args) {
+    static char recv_buffer[512];
+    ai_init();
+
+    while(1) {
+        if (is_wifi_connected()) {
+            ai_ask("What is the weather in New York today", recv_buffer, sizeof(recv_buffer));
+            ESP_LOGI(TAG, "GEMINI: %s", recv_buffer);
+
+            vTaskDelay(pdMS_TO_TICKS(60000));
+        }
+    }
+}
+
+static void display_task(void *args) {
+    display_init();
+    vTaskDelay(NULL);
+}
 
 void app_main(void)
 {
@@ -32,13 +53,6 @@ void app_main(void)
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
     wifi_init();
     
-    if (is_wifi_connected()) {
-        static char recv_buffer[512] = {0};
-        ai_init();
-
-        ai_ask("What is the weather in New York today", recv_buffer, sizeof(recv_buffer));
-        ESP_LOGI(TAG, "GEMINI: %s", recv_buffer);
-    }else {
-        ESP_LOGE(TAG, "Failed to connect to internet");
-    }
+    xTaskCreate(display_task, "display", 4096, NULL, 5, NULL);
+    xTaskCreate(ai_task, "ai", 8192, NULL, 5, NULL);
 }
