@@ -9,13 +9,12 @@
 
 #include "driver/i2c_master.h"
 
+#include "bitmaps.h"
+
 static const i2c_port_num_t i2c_port = 0;
 static const gpio_num_t i2c_sda_pin = 21;
 static const gpio_num_t i2c_scl_pin = 22;
 static const uint8_t i2c_glitch_ignore_count = 7;
-//static const uint16_t sdd1306_addr = 0x3C;
-//static const uint32_t sdd1306_scl_speed_hz = 100000;
-//static const uint32_t delay_ms = 1000;
 
 static const char* TAG = "DEVICE";
 
@@ -46,22 +45,30 @@ void display_init(void) {
     ssd1306_init(i2c_bus_handle, &dev_cfg, &dev_hdl);
     if (dev_hdl == NULL) {
         ESP_LOGE(TAG, "ssd1306 handle init failed");
-        //assert(dev_hdl);
     }
 
+    ssd1306_set_contrast(dev_hdl, 0xff);
+    ssd1306_clear_display(dev_hdl, false);
+    
     for (;;) {
-        int center = 1, top = 1, bottom = 4;
-        char lineChar[16];
-        uint8_t image[24];
-
         ESP_LOGI(TAG, "Panel is 128x64");
+        ESP_LOGI(TAG, "Display bitmap icons");
+        //for (int i = 0; i < ANIM_FRAMES; i++) {
+            ssd1306_display_bitmap(dev_hdl, 0, 0, anim_frames[0], 128, 64, false);
+            vTaskDelay(pdMS_TO_TICKS(100));
+        //}
+
+        //ssd1306_clear_display(dev_hdl, false);
+        
+        //ssd1306_display_bitmap(dev_hdl, 31, 0, data_tx_icon_32x32, 32, 32, false);
+        //vTaskDelay(1000 / portTICK_PERIOD_MS);
 
         // Display x3 text
-        ESP_LOGI(TAG, "Display x3 Text");
-        ssd1306_clear_display(dev_hdl, false);
-        ssd1306_set_contrast(dev_hdl, 0xff);
-        ssd1306_display_text_x3(dev_hdl, 0, "Hello", false);
-        vTaskDelay(3000 / portTICK_PERIOD_MS);
+        //ESP_LOGI(TAG, "Display x3 Text");
+        //ssd1306_clear_display(dev_hdl, false);
+        //ssd1306_set_contrast(dev_hdl, 0xff);
+        //ssd1306_display_text_x3(dev_hdl, 0, "Hello", false);
+        //vTaskDelay(3000 / portTICK_PERIOD_MS);
 
     }
 
