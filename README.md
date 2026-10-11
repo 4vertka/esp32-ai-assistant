@@ -1,4 +1,4 @@
-# ESP32 AI Assistant
+# ESP32 AI Assistant (in development)
 
 A small embedded project that connects an ESP32 to Wi-Fi, sends a prompt to the
 Google Gemini API over HTTPS, and shows the response on a 16x2 character LCD,
