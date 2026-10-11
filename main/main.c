@@ -21,18 +21,43 @@ static const char* TAG = "MAIN";
 
 static const char* prompt = "Hello from esp32";
 
-static void ai_task(void *args) {
-    static char recv_buffer[512];
+static void ai_task(void) {//void *args) {
+    // lcd display part
+    hd44780_t lcd = {
+          .write_cb = NULL,
+                  .font = HD44780_FONT_5X8,
+          .lines = 2,
+          .pins = {
+              .rs = 19,
+              .e  = 23,
+              .d4 = 18,
+              .d5 = 17,
+            .d6 = 16,
+            .d7 = 15,
+            .bl = HD44780_NOT_USED
+        },
+    };
+    
+    ESP_ERROR_CHECK(hd44780_init(&lcd));
+
+    // ai part
+    static char recv_buffer[32];
     ai_init();
 
-    while(1) {
+    //while(1) {
         if (is_wifi_connected()) {
-            ai_ask("What is the weather in New York today", recv_buffer, sizeof(recv_buffer));
+            ai_ask("hello: answer only in 31 bytes(letters)", recv_buffer, sizeof(recv_buffer));
             ESP_LOGI(TAG, "GEMINI: %s", recv_buffer);
+            
+            char *top_line_buffer = &recv_buffer[0];
+            char *bottom_line_buffer = &recv_buffer[16];
 
+            hd44780_puts(&lcd, top_line_buffer);
+            hd44780_gotoxy(&lcd, 0, 1);         
+            hd44780_puts(&lcd, bottom_line_buffer);
             vTaskDelay(pdMS_TO_TICKS(60000));
         }
-    }
+    //}
 }
 
 static void display_task(void *args) {
@@ -58,9 +83,9 @@ static void display_lcd_task() {
 
     ESP_ERROR_CHECK(hd44780_init(&lcd));
     
-    hd44780_puts(&lcd, "Hello, ESP-IDF!");
+    hd44780_puts(&lcd, "Hello1");
     hd44780_gotoxy(&lcd, 0, 1);        
-    hd44780_puts(&lcd, "Line 2");
+    hd44780_puts(&lcd, "Hello2");
 
 }
 
@@ -76,12 +101,14 @@ void app_main(void)
 
     ESP_ERROR_CHECK(ret);
 
-    display_lcd_task();
+    //display_lcd_task();
 
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
     wifi_init();
     
+    ai_task();
+
     xTaskCreate(display_task, "display", 4096, NULL, 5, NULL);
-    xTaskCreate(ai_task, "ai", 8192, NULL, 5, NULL);
+    //xTaskCreate(ai_task, "ai", 8192, NULL, 5, NULL);
     //xTaskCreate(display_lcd_task, "display_lcd", 4096, NULL, 5, NULL);
 }
