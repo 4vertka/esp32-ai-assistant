@@ -21,7 +21,6 @@ static const char* TAG = "DEVICE";
 void display_init(void) {
     esp_err_t ret;
     i2c_master_bus_handle_t i2c_bus_handle;
-    i2c_master_dev_handle_t i2c_sdd1306_device_handle;
 
     i2c_master_bus_config_t bus_config = {
         .i2c_port = i2c_port,
@@ -35,45 +34,29 @@ void display_init(void) {
     ret = i2c_new_master_bus(&bus_config, &i2c_bus_handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to init I2C");
+        return;
     }
 
-    TickType_t last_wake_time = xTaskGetTickCount();
-
     ssd1306_config_t dev_cfg = I2C_SSD1306_128x64_CONFIG_DEFAULT;
-    ssd1306_handle_t dev_hdl;
+    ssd1306_handle_t dev_hdl = NULL;
 
     ssd1306_init(i2c_bus_handle, &dev_cfg, &dev_hdl);
     if (dev_hdl == NULL) {
         ESP_LOGE(TAG, "ssd1306 handle init failed");
+        return;
     }
 
     ssd1306_set_contrast(dev_hdl, 0xff);
     ssd1306_clear_display(dev_hdl, false);
-    
+
+    ESP_LOGI(TAG, "Panel is 128x64");
+    ESP_LOGI(TAG, "Display bitmap icons");
+
     for (;;) {
-        ESP_LOGI(TAG, "Panel is 128x64");
-        ESP_LOGI(TAG, "Display bitmap icons");
-        //for (int i = 0; i < ANIM_FRAMES; i++) {
-            ssd1306_display_bitmap(dev_hdl, 0, 0, anim_frames[0], 128, 64, false);
+        for (int i = 0; i < ANIM_FRAMES; i++) {
+            ssd1306_display_bitmap(dev_hdl, 0, 0, anim_frames[i], 128, 64, false);
             vTaskDelay(pdMS_TO_TICKS(100));
-        //}
-
-        //ssd1306_clear_display(dev_hdl, false);
-        
-        //ssd1306_display_bitmap(dev_hdl, 31, 0, data_tx_icon_32x32, 32, 32, false);
-        //vTaskDelay(1000 / portTICK_PERIOD_MS);
-
-        // Display x3 text
-        //ESP_LOGI(TAG, "Display x3 Text");
-        //ssd1306_clear_display(dev_hdl, false);
-        //ssd1306_set_contrast(dev_hdl, 0xff);
-        //ssd1306_display_text_x3(dev_hdl, 0, "Hello", false);
-        //vTaskDelay(3000 / portTICK_PERIOD_MS);
-
+        }
     }
-
-    ssd1306_delete(dev_hdl);
-    vTaskDelete(NULL);
 }
-
 

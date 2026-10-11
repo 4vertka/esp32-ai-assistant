@@ -134,26 +134,34 @@ static void ai_get_response(const char* json, char* out, size_t out_size) {
 }
 
 void ai_ask(const char* prompt, char* out, size_t out_size) {
+    if (out_size > 0) {
+        out[0] = '\0';
+    }
+
     char* json_prompt = ai_create_prompt(prompt);
+    if (!json_prompt) {
+        ESP_LOGE(TAG, "Failed to create prompt");
+        return;
+    }
+
     memset(response_buffer, 0, sizeof(response_buffer));
-    
+
     esp_http_client_set_post_field(client, json_prompt, strlen(json_prompt));
     esp_err_t err = esp_http_client_perform(client);
 
     cJSON_free(json_prompt);
 
-    if (err ==  ESP_OK) {
-       int status = esp_http_client_get_status_code(client);
-       ESP_LOGI(TAG, "HTTP status: %d", status);
+    if (err == ESP_OK) {
+        int status = esp_http_client_get_status_code(client);
+        ESP_LOGI(TAG, "HTTP status: %d", status);
 
-       if (status == 200) {
-           ai_get_response(response_buffer, out, out_size);
-       }else {
-           ESP_LOGE(TAG, "ERROR: %s", response_buffer);
+        if (status == 200) {
+            ai_get_response(response_buffer, out, out_size);
+        } else {
+            ESP_LOGE(TAG, "ERROR: %s", response_buffer);
         }
-    }else {
+    } else {
         ESP_LOGE(TAG, "perform failed: %s", esp_err_to_name(err));
-        return;
     }
 }
 
@@ -161,7 +169,6 @@ void ai_init(void) {
     esp_http_client_config_t config = {
         .host = "generativelanguage.googleapis.com",
         .path = "/v1beta/models/" GEMINI_MODEL ":generateContent",
-        .query = "key=" GEMINI_API_KEY, 
         .event_handler = http_event_handle,
         .user_data = response_buffer,
         .transport_type = HTTP_TRANSPORT_OVER_SSL,
@@ -171,10 +178,12 @@ void ai_init(void) {
 
     ESP_LOGI(TAG, "HTTPS request with url =>");
     client = esp_http_client_init(&config);
-    
+
     esp_http_client_set_method(client, HTTP_METHOD_POST);
     esp_http_client_set_header(client, "Content-Type", "application/json");
+    esp_http_client_set_header(client, "x-goog-api-key", GEMINI_API_KEY);
 }
+
 
 void ai_deinit(void) {
     if (client) {

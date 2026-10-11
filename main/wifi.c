@@ -2,7 +2,6 @@
 
 #include "secret.h"
 
-#include <complex.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <stdio.h>
@@ -22,13 +21,14 @@
 
 #include "http_client.h"
 
+
 static const char *WIFI_TAG = "WIFI";
 static EventGroupHandle_t wifi_event_group;
 
 #define WIFI_CONNECTED_BIT          BIT0
 #define WIFI_FAIL_BIT               BIT1
 
-static int max_connect_retry = 5;
+static int max_connect_retry = 0;
 
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data) {
@@ -96,9 +96,9 @@ void wifi_init(void) {
   portMAX_DELAY);
 
   if (bits & WIFI_CONNECTED_BIT) {
-    ESP_LOGI(WIFI_TAG, "Connected to wifi SSID:%s, password:%s", WIFI_SSID, WIFI_PASSWD);
+    ESP_LOGI(WIFI_TAG, "Connected to wifi SSID:%s", WIFI_SSID);
   }else if (bits & WIFI_FAIL_BIT) {
-    ESP_LOGI(WIFI_TAG, "Failed to connect to wifi SSID:%s, password:%s", WIFI_SSID, WIFI_PASSWD);
+    ESP_LOGI(WIFI_TAG, "Failed to connect to wifi SSID:%s", WIFI_SSID);
   }else {
       ESP_LOGE(WIFI_TAG, "UNEXPECTED EVENT");
   }
