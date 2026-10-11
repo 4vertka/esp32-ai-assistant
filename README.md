@@ -71,14 +71,6 @@ main/
 3. The first candidate's text is extracted from the response and written to the LCD.
 4. A FreeRTOS task drives the OLED.
 
-## Roadmap
-
-- [ ] Periodic or button-triggered queries
-- [ ] Scrolling / paginated text for responses longer than 32 characters
-- [ ] Animated OLED frames
-- [ ] Move credentials to `menuconfig` (Kconfig) or NVS
-- [ ] Move AI request into its own FreeRTOS task
-
 ## Author
 Oleksandr Pysarchuk
 
